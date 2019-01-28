@@ -1,0 +1,7 @@
+model:resnet_rcmalli
+classification:sex
+weights:VGGface
+epochs :3
+batch_size :64
+optim :adam
+lr :0.0001
