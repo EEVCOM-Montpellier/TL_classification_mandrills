@@ -61,6 +61,13 @@ python main-args.py -model resnet_rcmalli -classification stage
  The tool will create a folder inside `results/` a folder with the current date `results/2019-01-28/`.
  Inside `results/2019-01-28/` : log_file.txt , params.txt, plots of accuracy and loss.
 
+ ## Folders and scripts
+
+* **make_dataset.py** : formate meta-datas for images (remove bad quality images)
+* `datas/clean_pict_tags` : dataset set after removing image with qual 0 and 1
+* `datas/minitest_pict_tags` : mini dataset with 392 images
+
+
 
  ## TO DO
 
