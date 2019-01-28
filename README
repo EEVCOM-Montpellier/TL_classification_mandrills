@@ -60,3 +60,12 @@ python main-args.py -model resnet_rcmalli -classification stage
 
  The tool will create a folder inside `results/` a folder with the current date `results/2019-01-28/`.
  Inside `results/2019-01-28/` : log_file.txt , params.txt, plots of accuracy and loss.
+
+
+ ## TO DO
+
+ * Implémenter l'optimiseur adam personnalisé pour le Learning Rate multipliers
+ * Ajouter sauvegarde Network
+ * Sauver même train/test set (sortir de la fct)
+ * Sauver et charger les img numpys dans datas
+ * Ajouter layer : droupout...
