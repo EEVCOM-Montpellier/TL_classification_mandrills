@@ -76,7 +76,7 @@ inputShape = (224, 224)
 print("Charging dataset")
 tags_pict = pd.read_csv('datas/clean_pict_tags.csv')
 dirname = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"
-NB_EPOCHS = 3
+NB_EPOCHS = 5
 
 
 #-------------------------------------------------------------------------------
@@ -135,6 +135,11 @@ def classify_type(Y):
     }.get(Y)
 
 
+def get_lr_metric(optimizer):
+    def lr(y_true, y_pred):
+        return optimizer.lr
+    return lr
+
 
 def classif(classifytype , img_data, model):
     """Construct netw and classify
@@ -162,14 +167,23 @@ def classif(classifytype , img_data, model):
     print("Architecture custom")
     print(model_custom.summary())
     #Fine-tune: Freeze : CB1 and CB2 (37 firsts layers)
-    #for layer in model_custom.layers[:37]:
-        #layer.trainable = False
+    for layer in model_custom.layers[:37]:
+        layer.trainable = False
     #change lr for adam optim
-    adam =optimizers.Adam(lr=0.0001)
+    # Changing learning rate multipliers for different layers :
+    # initial : 10e-4
+    # apres block4 : 10e-3
+    learning_rate_multipliers = {}
+    learning_rate_multipliers['conv1/7x7_s2'] = 1
+    learning_rate_multipliers['conv4_1_1x1_reduce'] = 10
+    adam_with_lr_multipliers = Adam_lr_mult(multipliers=learning_rate_multipliers)
+    #lr_metric = get_lr_metric(adam_with_lr_multipliers)
+    lr_metric = get_lr_metric(optimizers.Adam(lr=0.0001))
+    #model_custom.compile(loss='categorical_crossentropy',optimizer=adam_with_lr_multipliers, metrics=['accuracy' , lr_metric])
     #learn compile
-    model_custom.compile(loss='categorical_crossentropy',optimizer=adam, metrics=['accuracy'])
+    model_custom.compile(loss='categorical_crossentropy',optimizer=optimizers.Adam(lr=0.0001), metrics=['accuracy' , lr_metric])
     hist = model_custom.fit(X_train, y_train, batch_size=64, epochs=NB_EPOCHS, verbose=1, validation_data=(X_test, y_test))
-    (loss, accuracy) = model_custom.evaluate(X_test, y_test, batch_size=10, verbose=1)
+    (loss, accuracy, lr) = model_custom.evaluate(X_test, y_test, batch_size=10, verbose=1)
     print("[INFO] loss={:.4f}, accuracy: {:.4f}%".format(loss,accuracy * 100))
     return(hist)
 
@@ -181,6 +195,8 @@ def plot_loss_acc(hist , todaystr):
     val_loss=hist.history['val_loss']
     train_acc=hist.history['acc']
     val_acc=hist.history['val_acc']
+    train_lr=hist.history['lr']
+    val_lr=hist.history['val_lr']
     xc=range(NB_EPOCHS)
     plt.figure(1,figsize=(7,5))
     plt.plot(xc,train_loss)
@@ -204,7 +220,17 @@ def plot_loss_acc(hist , todaystr):
     #print plt.style.available # use bmh, classic,ggplot for big pictures
     plt.style.use(['classic'])
     plt.savefig(save_path + 'acc.png')
-    plt.show()
+    plt.figure(3,figsize=(7,5))
+    plt.plot(xc,train_lr)
+    plt.plot(xc,val_lr)
+    plt.xlabel('num of Epochs')
+    plt.ylabel('learning rate')
+    plt.title('train_lr vs val_lr')
+    plt.grid(True)
+    plt.legend(['train','val'],loc=4)
+    #print plt.style.available # use bmh, classic,ggplot for big pictures
+    plt.style.use(['classic'])
+    plt.savefig(save_path + 'lr.png')
 
 
 
@@ -230,17 +256,17 @@ print("Architecture model basis")
 print(model.summary())
 historique = classif(args["classification"], img_data, model)
 print(historique.history)
-dico_params = historique.params
+print(historique.params)
 plot_loss_acc(historique, todaystr)
 
 
 f = open(params_file_path,'w')
 f.write("model:" +args["model"] + "\n")
 f.write("classification:" + args["classification"] + "\n")
-f.write("weights:" + "imagenet" + "\n")
+f.write("weights:" + "VGGface" + "\n")
 f.write("epochs :" + str(NB_EPOCHS) + "\n")
 f.write("batch_size :" + str(64) + "\n" )
 f.write("optim :" + "adam" + "\n")
-f.write("lr :" + str(0.0001) + "\n")
+f.write("lr :" + str(0.0001) + " evolue \n")
 #f.write(pickle.dumps( historique.params))
 f.close()
