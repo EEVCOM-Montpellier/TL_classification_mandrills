@@ -63,6 +63,7 @@ python main-args.py -model resnet_rcmalli -classification stage
 
  ## Folders and scripts
 
+* **main-args.py** : /!\ Change photos directory : ```dirname = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"```
 * **make_dataset.py** : formate meta-datas for images (remove bad quality images)
 * `datas/clean_pict_tags` : dataset set after removing image with qual 0 and 1
 * `datas/minitest_pict_tags` : mini dataset with 392 images
