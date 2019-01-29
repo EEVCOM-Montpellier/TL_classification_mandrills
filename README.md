@@ -5,18 +5,18 @@ The objective of this tool is to classify Mandrills Face per : sex, stage and in
 
 ## Requirements
 
+* Install directly all requirements here (in your env ; ex py35):
+
+```
+pip install -r requirements.txt
+```
+
+
 * If using a virtual env (with Anaconda)
 
 ```
 conda create -n py35 python=3.5 anaconda
 activate py35
-conda install spyder
-#install packages
-activate py35
-conda install theano
-conda install tensorflow
-conda install keras
-conda install scikit-learn
 ```
 
  * Python library
