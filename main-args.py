@@ -60,7 +60,8 @@ MODELS = {
 	"vgg16": VGG16,
 	"vgg19": VGG19,
 	"resnet": ResNet50,
-    "resnet_rcmalli": VGGFace
+    "resnet_rcmalli": VGGFace,
+    "vgg16_rcmalli": VGGFace
 }
 
 # esnure a valid model name was supplied via command line argument
@@ -74,40 +75,13 @@ if args["model"] not in MODELS.keys():
 inputShape = (224, 224)
 
 print("Charging dataset")
-tags_pict = pd.read_csv('datas/clean_pict_tags.csv')
+#tags_pict = pd.read_csv('datas/clean_pict_tags.csv')
 dirname = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"
-NB_EPOCHS = 5
+NB_EPOCHS = 100
 
 
 #-------------------------------------------------------------------------------
 
-def load_images(dirname,tags_pict):
-    """Load each image into list of numpy array and transform into array
-    ----------
-    dirname : path to folder with pictures
-    tags_pict : pandas dataframe with annotation for pict
-    Returns : array
-    """
-    img_data_list = []
-    for p in tags_pict.index :
-        # our input image is now represented as a NumPy array of shape
-        # (inputShape[0], inputShape[1], 3) however we need to expand the
-        # dimension by making the shape (1, inputShape[0], inputShape[1], 3)
-        # so we can pass it through thenetwork
-        img_path = dirname + '/' + tags_pict.Folder[p] + '/' + tags_pict.pict[p]
-        img = load_img(img_path, target_size= inputShape)
-        x = img_to_array(img)
-        x = np.expand_dims(img, axis=0)
-        # pre-process the image using the appropriate function based on the
-        # model that has been loaded (i.e., mean subtraction, scaling, etc.)
-        x = preprocess_input(x)
-        img_data_list.append(x)
-    img_data = np.array(img_data_list)
-    img_data=np.rollaxis(img_data,1,0)
-    img_data=img_data[0]
-    print("End : load images")
-    np.save('results/img_data_load',img_data)
-    return(img_data)
 
 
 # /!\ Metre args : model_choice
@@ -117,42 +91,64 @@ def my_model(model_choice):
     Network = MODELS[model_choice]
     if model_choice == "resnet_rcmalli" :
         model = Network(model='resnet50') # architecture renet50 with vggface_weight
+    if model_choice == "vgg16_rcmalli" :
+        model = Network(model='vgg16') # architecture vgg16 with vggface_weight
     else :
         model= Network(weights="imagenet") #other architectures with imagenet_weight
     return(model)
 
 
-# /!\ Metre args pour que l'utilisateur choisisse son type de classification
-def classify_type(Y):
-    # RETURN ARRAY Y to be encoded
+
+#choix de la qualite virer si inutile... ou mettre dans make_dataset.py
+def choice_datas_csv_qual(qual):
+    return{
+    "0":  pd.read_csv('datas/clean0_pict_tags.csv'),
+    "1": pd.read_csv('datas/clean1_pict_tags.csv'),
+    "2":   pd.read_csv('datas/clean2_pict_tags.csv'),
+    "mini":  pd.read_csv('datas/minitest_pict_tags.csv')
+    }.get(qual)
+
+
+
+def train_test_type(Y):
     return {
-        # convert class labels to on-hot encoding
-        # tags_pict['codes'] = tags_pict.stage.cat.codes
-        # labels = np.asarray(list(tags_pict['codes']), dtype ='int64' )
-        "sex":np_utils.to_categorical(np.asarray(list(tags_pict.sex.cat.codes), dtype ='int64' ), len(tags_pict.sex.cat.categories)),
-		"stage":np_utils.to_categorical(np.asarray(list(tags_pict.stage.cat.codes), dtype ='int64' ), len(tags_pict.stage.cat.categories)),
-		"indiv":np_utils.to_categorical(np.asarray(list(tags_pict.indiv.cat.codes), dtype ='int64' ), len(tags_pict.indiv.cat.categories))
+        "sex": np.load('datas/train-test_set/sex-clean01_v1.npz'),
+		"stage": np.load('datas/train-test_set/stage-clean01_v1.npz'),
+		"indiv": np.load('datas/train-test_set/indiv-clean01_v1.npz')
     }.get(Y)
 
 
-def get_lr_metric(optimizer):
-    def lr(y_true, y_pred):
-        return optimizer.lr
-    return lr
+def train_test_type_mini(Y):
+    return {
+        "sex":  np.load('datas/train-test_set/sex-mini_clean01_v1.npz'),
+		"stage": np.load('datas/train-test_set/stage-mini_clean01_v1.npz'),
+		"indiv": np.load('datas/train-test_set/indiv-mini_clean01_v1.npz')
+    }.get(Y)
 
 
-def classif(classifytype , img_data, model):
-    """Construct netw and classify
-    classifytype : str
-        classifytype = ["sex","stage","indiv"]
-    img_data : all loading images
-    """
-    num_of_samples = tags_pict.shape[0]
-    Y = classify_type(classifytype)
-    #Make training and testing set
-    #randomize array item order for numpy array in unison
-    x,y = shuffle(img_data,Y)
-    X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
+
+from keras import backend as K
+from keras.callbacks import TensorBoard
+import tensorflow as tf
+
+class LRTensorBoard(TensorBoard):
+    def __init__(self, log_dir):  # add other arguments to __init__ if you need
+        self.batch_writer = tf.summary.FileWriter(log_dir)
+        self.step = 0
+        super().__init__(log_dir=log_dir)
+    def on_epoch_end(self, epoch, logs=None):
+        logs.update({'lr': K.eval(self.model.optimizer.lr)})
+        super().on_epoch_end(epoch, logs)
+
+
+#Train the model using tensorboard instance in the callbacks
+
+def classif(classifytype, model, mini=True):
+    if mini == True:
+        ts = train_test_type_mini(classifytype)
+    else:
+        ts = train_test_type(classifytype)
+    X_train, X_test, y_train, y_test = ts['X_train'], ts['X_test'], ts['y_train'], ts['y_test']
     print("End: Split dataset into train et test set")
     ## A REVOIR ICI !!!!!
     #Change last_layer ( add dropout + softmax depends on class_type)
@@ -162,31 +158,40 @@ def classif(classifytype , img_data, model):
     #x = Dropout(0.5)(x)
     #out =  Dense(Y.shape[1], activation='softmax',name='custom_output_layer')(x)
     ## (bug to fix) : add dropout !!!!
-    out = Dense(Y.shape[1], activation='softmax',name='output_layer')(model.output)
+    out = Dense(y_train.shape[1], activation='softmax',name='output_layer')(model.output)
     model_custom = Model(input=model.input, outputs=out)
     print("Architecture custom")
     print(model_custom.summary())
-    #Fine-tune: Freeze : CB1 and CB2 (37 firsts layers)
-    for layer in model_custom.layers[:37]:
+    #Fine-tune: Freeze : CB1 and CB2 (37 firsts layers) #♦resnet
+    #F#Fine-tune: Freeze : CB1 and CB2 (14 firsts layers) #vgg16
+    for layer in model_custom.layers[:14]:
         layer.trainable = False
     #change lr for adam optim
     # Changing learning rate multipliers for different layers :
     # initial : 10e-4
     # apres block4 : 10e-3
-    learning_rate_multipliers = {}
-    learning_rate_multipliers['conv1/7x7_s2'] = 1
-    learning_rate_multipliers['conv4_1_1x1_reduce'] = 10
-    adam_with_lr_multipliers = Adam_lr_mult(multipliers=learning_rate_multipliers)
+    #learning_rate_multipliers = {}
+    #learning_rate_multipliers['conv1/7x7_s2'] = 1
+    #learning_rate_multipliers['conv4_1_1x1_reduce'] = 10
+    #adam_with_lr_multipliers = Adam_lr_mult(multipliers=learning_rate_multipliers)
     #lr_metric = get_lr_metric(adam_with_lr_multipliers)
-    lr_metric = get_lr_metric(optimizers.Adam(lr=0.0001))
+    #lr_metric = get_lr_metric(optimizers.Adam(lr=0.001))
     #model_custom.compile(loss='categorical_crossentropy',optimizer=adam_with_lr_multipliers, metrics=['accuracy' , lr_metric])
     #learn compile
-    model_custom.compile(loss='categorical_crossentropy',optimizer=optimizers.Adam(lr=0.0001), metrics=['accuracy' , lr_metric])
-    hist = model_custom.fit(X_train, y_train, batch_size=64, epochs=NB_EPOCHS, verbose=1, validation_data=(X_test, y_test))
-    (loss, accuracy, lr) = model_custom.evaluate(X_test, y_test, batch_size=10, verbose=1)
+    model_custom.compile(loss='categorical_crossentropy',optimizer=optimizers.Adam(lr=0.001), metrics=['accuracy'] )
+    tensorboard =  LRTensorBoard(log_dir= "results/" + todaystr + '/logs/' )
+    hist = model_custom.fit(X_train, y_train, batch_size=64, epochs=NB_EPOCHS, verbose=1, validation_data=(X_test, y_test) ,  callbacks=[tensorboard])
+    #(loss, accuracy, lr) = model_custom.evaluate(X_test, y_test, batch_size=10, verbose=1)
+    (loss, accuracy) = model_custom.evaluate(X_test, y_test, batch_size=10, verbose=1)
+    model_json = model_custom.to_json()
+    with open('results/' + todaystr + '/model_custom.json', "w") as json_file:
+        json_file.write(model_json)
+    # serialize weights to HDF5
+    model_custom.save_weights('results/' + todaystr + "/model_custom_weights.h5")
+    print("Saved model to disk")
+    print("Loaded model from disk")
     print("[INFO] loss={:.4f}, accuracy: {:.4f}%".format(loss,accuracy * 100))
     return(hist)
-
 
 
 def plot_loss_acc(hist , todaystr):
@@ -195,8 +200,8 @@ def plot_loss_acc(hist , todaystr):
     val_loss=hist.history['val_loss']
     train_acc=hist.history['acc']
     val_acc=hist.history['val_acc']
-    train_lr=hist.history['lr']
-    val_lr=hist.history['val_lr']
+    #train_lr=hist.history['lr']
+    #val_lr=hist.history['val_lr']
     xc=range(NB_EPOCHS)
     plt.figure(1,figsize=(7,5))
     plt.plot(xc,train_loss)
@@ -220,17 +225,6 @@ def plot_loss_acc(hist , todaystr):
     #print plt.style.available # use bmh, classic,ggplot for big pictures
     plt.style.use(['classic'])
     plt.savefig(save_path + 'acc.png')
-    plt.figure(3,figsize=(7,5))
-    plt.plot(xc,train_lr)
-    plt.plot(xc,val_lr)
-    plt.xlabel('num of Epochs')
-    plt.ylabel('learning rate')
-    plt.title('train_lr vs val_lr')
-    plt.grid(True)
-    plt.legend(['train','val'],loc=4)
-    #print plt.style.available # use bmh, classic,ggplot for big pictures
-    plt.style.use(['classic'])
-    plt.savefig(save_path + 'lr.png')
 
 
 
@@ -245,19 +239,24 @@ params_file_path =  "results/" + todaystr + "/params.txt"
 
 
 #tags_pict = pd.read_csv('datas/clean_pict_tags.csv')
-tags_pict = pd.read_csv('datas/minitest_pict_tags.csv')
-tags_pict['sex'] = tags_pict['sex'].astype('category')
-tags_pict['stage'] = tags_pict['stage'].astype('category')
-tags_pict['indiv'] = tags_pict['indiv'].astype('category')
-img_data = load_images(dirname,tags_pict)
+#tags_pict = pd.read_csv('datas/minitest_pict_tags.csv')
+#tags_pict['sex'] = tags_pict['sex'].astype('category')
+#tags_pict['stage'] = tags_pict['stage'].astype('category')
+#tags_pict['indiv'] = tags_pict['indiv'].astype('category')
+# img_data = load_images(dirname,tags_pict) ON VIRE AJOUT LOAD SELON LA QUALITE DESIRE
+#
+#model_choice = "resnet_rcmalli"
+#classifytype = "sex"
+
+
 model_choice = args["model"]
 model= my_model(model_choice)
 print("Architecture model basis")
 print(model.summary())
-historique = classif(args["classification"], img_data, model)
+historique = classif(args["classification"], model, mini=False)
 print(historique.history)
 print(historique.params)
-plot_loss_acc(historique, todaystr)
+
 
 
 f = open(params_file_path,'w')
@@ -267,6 +266,11 @@ f.write("weights:" + "VGGface" + "\n")
 f.write("epochs :" + str(NB_EPOCHS) + "\n")
 f.write("batch_size :" + str(64) + "\n" )
 f.write("optim :" + "adam" + "\n")
-f.write("lr :" + str(0.0001) + " evolue \n")
+f.write("lr :" + str(0.001) + "\n")
+f.write("freeze :" + "first 14 layers" + "\n")
 #f.write(pickle.dumps( historique.params))
 f.close()
+
+plot_loss_acc(historique, todaystr)
+
+#------------------------------------------------------------------------
