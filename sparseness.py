@@ -65,16 +65,35 @@ if not os.path.exists(RESULTS_DIR + 'activ_dist/'):
 r = re.compile(".*Relu")
 activ_list = list(filter(r.match, [*layers_activations]))
 
+truc=[]
 #TAILLE DES LAYERS
-for activ in activ_list: #parcourt les couches
+for activ in  sorted(activ_list): #parcourt les couches
     print(activ)
     print(layers_activations[activ].shape)
     if len(layers_activations[activ].shape) != 4 :
         activ_list.remove(activ)
 
+
+#FIND BEST PAS
+        
+    
+def find_pas(layers_activations, layer):
+    taille = layers_activations[layer].shape
+    if (taille[1] > 100) :
+        pas = 64
+    if (taille[1] > 100) :
+        pas = 32
+    elif (taille[1] > 50) :
+        pas = 16
+    elif(taille[1] > 25) :
+        pas = 8
+    else:
+        pas = 2
+    return(pas)
+    
+    
+
 #FUNCTIONS
-
-
 def list_act_1_neur(layer, neur_x , neur_y , act_map):
     """Give list of all activities(100img) for 1 neuron for 1 layer for 1 act_map"""
     list_act = []
@@ -86,15 +105,12 @@ def list_act_1_neur(layer, neur_x , neur_y , act_map):
 
 
 def list_act_all_neur(layers_activations, layer, num_filter):
-    """Give list of list all activities for all neuron for 1 layer for 1 act_map for 100 images"""
+    """Give list of list all activities for all neuron for 1 layer for 1 act_map for 100 images
     directory = RESULTS_DIR +  'activ_dist/' + str(num_filter) + '/'
     if not os.path.exists(directory):
-        os.makedirs(directory)
+        os.makedirs(directory)"""
     taille = layers_activations[layer].shape
-    if ( taille[1] > 30) :
-        pas = 4
-    else:
-        pas = 1
+    pas = find_pas(layers_activations, layer)
     list_out = []
     for x in range(0,taille[1], pas):
         for y in range(0,taille[1],pas):
@@ -109,20 +125,14 @@ def list_act_all_neur(layers_activations, layer, num_filter):
     return(list_out)
     
 
-
-
-
 #----------------Lifetime Sparseness Measure --------------------------------
 
 #conv2_2 : (100, 112, 112, 128)
 
-#list pour chaq neuron du filtre de réponse de 100 images 
-layer_act_all_neur = list_act_all_neur(layers_activations, 'conv2_2/Relu:0', 1)
 
 # Lifetime kurtosis des 784 neurones sur 12544 pour 1 img
 
 
-    
 #TEST UNIMODAL DIST?????
 def lifetime_kurtosis(layer_act_all_neur, neuron):
     """Calculate Lifetime kurtosis 
@@ -138,23 +148,45 @@ def lifetime_kurtosis(layer_act_all_neur, neuron):
     KL = KL/M - 3
     return(KL)
     
-def KL_mulitple_neurons(layer_act_all_neur):
-    """List all KL of each neurons in a given layer"""
-    all_KL = []
-    for neuron in range(len(layer_act_all_neur)):
-        all_KL.append(lifetime_kurtosis(layer_act_all_neur,neuron))
-    return(all_KL)
+    
+def lifetime_TrevesRolls(layer_act_all_neur, neuron):
+    """Calculate Lifetime TrevesRolls
+    1 M stimuli for 1 neurone in the layer
+    layer_act_all_neur: list with activities reponse of all neurones for multiples images 
+    neuron: int num of neuron of the list 
+    return: """
+    num = 0
+    denom = 0
+    M = len(layer_act_all_neur[neuron]) #nb stimuli(nb img)
+    for i in range(M):
+        r = layer_act_all_neur[neuron][i]
+        num = r/M
+        denom = (r*r)/M
+    ST = (num**2)/denom
+    return(ST)
 
-#KL pour tous les neurones de la couche 2_2
-all_KL_conv2_2 = KL_mulitple_neurons(layer_act_all_neur)
-min(all_KL_conv2_2 )
-max(all_KL_conv2_2 )
-np.mean(all_KL_conv2_2 )
-np.var(all_KL_conv2_2 )
+
+
+def lifetime_multiple_neurons(layer_act_all_neur , criteria ):
+    """List all KL of each neurons for a given layer"""
+    if criteria == "Kurtosis" :
+        all_KL = []
+        for neuron in range(len(layer_act_all_neur)):
+            all_KL.append(lifetime_kurtosis(layer_act_all_neur,neuron))
+        return(all_KL)
+    elif criteria == "TrevesRolls":
+        all_TR = []
+        for neuron in range(len(layer_act_all_neur)):
+            all_TR.append(lifetime_TrevesRolls(layer_act_all_neur,neuron))
+        return(all_TR)
+    else:
+        return(False)        
+
+
+
 
 #----------- Population Sparseness Measures-----------------------------------
 
-img = 1
 
 def population_kurtosis(layer_act_all_neur, img):
     """Calculate Population kurtosis
@@ -168,17 +200,9 @@ def population_kurtosis(layer_act_all_neur, img):
         all_act = [neur[img] for neur in layer_act_all_neur] #response of all neurones for given img
         r = layer_act_all_neur[neur][img]
         KP += ((r - np.mean(all_act))/np.std(all_act))**4
-    KP = KP/M - 3
+    KP = KP/N - 3
     return(KP)
 
-
-def KP_mulitple_imgs(layer_act_all_neur):
-    """List all KP of each img(signal) in a given layer"""
-    all_KP = []
-    for img in range(len(layer_act_all_neur[0])):
-        all_KP.append(population_kurtosis(layer_act_all_neur, img))
-    return(all_KP)
-    
 
 def population_TrevesRolls(layer_act_all_neur, img):
     """Calculate Population TrevesRolls
@@ -195,28 +219,66 @@ def population_TrevesRolls(layer_act_all_neur, img):
         denom = (r*r)/N
     ST = (num**2)/denom
     return(ST)
+    
+    
+def population_multiple_neurons(layer_act_all_neur , criteria ):
+    """List all KL of each neurons for a given layer"""
+    if criteria == "Kurtosis" :
+        all_KP = []
+        for img in range(len(layer_act_all_neur[0])):
+            all_KP.append(population_kurtosis(layer_act_all_neur, img))
+        return(all_KP)
+    elif criteria == "TrevesRolls":
+        all_TR = []
+        for img in range(len(layer_act_all_neur[0])):
+            all_TR.append(population_TrevesRolls(layer_act_all_neur,img))
+        return(all_TR)
+    else:
+        return(False)   
+        
+#-----------------------------DICT ACTIVATIONS, sparseness per layer for each filter -------------------------------------------
 
 
 
-#KP pour plusieurs IMGs
-all_KP_conv2_2 = KP_mulitple_imgs(layer_act_all_neur)
 
+#--------- TEMPS EXECUTION POUR 100 IMG 
+    
+#list pour chaq neuron du filtre de réponse de 100 images 
+    
+#on prend la derniere couche 100*14*14*512 -> 2mn
+import time
+debut = time.time()
 
-
+curr_layer = 'conv5_3/Relu:0'
+conv5_3_all_filtres=dict((el,{}) for el in range(layers_activations[curr_layer].shape[3]))
+for num_filtre in range(layers_activations[curr_layer].shape[3]):
+    layer_act_all_neur = list_act_all_neur(layers_activations, curr_layer, num_filtre)
+    conv5_3_all_filtres[num_filtre]['activations'] = layer_act_all_neur
+    conv5_3_all_filtres[num_filtre]['lifetimeTR'] = lifetime_multiple_neurons(layer_act_all_neur, criteria = "TrevesRolls")
+    conv5_3_all_filtres[num_filtre]['populationTR'] = population_multiple_neurons(layer_act_all_neur, criteria = "TrevesRolls")
+    print("--- %s seconds pour 1 filtre ---" % (time.time() - debut))
+    
 
 #Dict with sparseness(KP,KL)  for each layer 
-sparseness_dict=dict((el,(0,0)) for el in activ_list)
-for k in sparseness_dict.keys():
-    print(layers_activations[k].shape)
-    print(k)
-    layer_act_all_neur = list_act_all_neur(layers_activations, k, 1)
-    allKL = KP_mulitple_imgs(layer_act_all_neur)
-    allKP = KP_mulitple_imgs(layer_act_all_neur)
-    sparseness_dict[k]=(allKL,allKP)
+debut = time.time()
+sparseness_dict=dict((el,{}) for el in activ_list)
+for curr_layer in sparseness_dict.keys():
+    layer_dict = dict((el,{}) for el in range(layers_activations[curr_layer].shape[3]))
+    for num_filtre in range(layers_activations[curr_layer].shape[3]):
+        layer_act_all_neur = list_act_all_neur(layers_activations, curr_layer, num_filtre)
+        layer_dict[num_filtre]['activations'] = layer_act_all_neur
+        layer_dict[num_filtre]['lifetimeTR'] = lifetime_multiple_neurons(layer_act_all_neur, criteria = "TrevesRolls")
+        layer_dict[num_filtre]['populationTR'] = population_multiple_neurons(layer_act_all_neur, criteria = "TrevesRolls")
+    sparseness_dict[curr_layer] = layer_dict
+    print("--- %s seconds pour 1 layer ---" % (time.time() - debut))
 
 
 #save dict 
-json = json.dumps(sparseness_dic)
+json = json.dumps(sparseness_dict)
 f = open(RESULTS_DIR  + "dict_sparseness_perlayer.json","w")
 f.write(json)
 f.close()
+
+truc=0
+for k in sparseness_dict.keys():
+    truc += len(sparseness_dict[k]))
