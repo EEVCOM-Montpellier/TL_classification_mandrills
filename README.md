@@ -46,10 +46,11 @@ Run the program
 With :
 
 - MODEL: the architecture of neural network with options: resnet_rcmalli(default) , vgg16 , vgg19, resnet
+Only resnet_rcmalli is pre-trained with VGGface, the others are train with Imagenet.
 
 - CLASS : Type of classification: sex, stage or individue.
-
-Only resnet_rcmalli is pre-trained with VGGface, the others are train with Imagenet.
+- CLASS (NEW UPDATE) : add : feminity and sparseness
+For feminity and sparseness: it takes a dataset without the pictures of the 65 females (with comportmental varaibles) to learn
 
 ## Example usage
 
@@ -65,15 +66,3 @@ python main-args.py -model resnet_rcmalli -classification stage
 
 * **main-args.py** : /!\ Change photos directory : ```dirname = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"```
 * **make_dataset.py** : formate meta-datas for images (remove bad quality images)
-* `datas/clean_pict_tags` : dataset set after removing image with qual 0 and 1
-* `datas/minitest_pict_tags` : mini dataset with 392 images
-
-
-
- ## TO DO
-
- * Implémenter l'optimiseur adam personnalisé pour le Learning Rate multipliers
- * Ajouter sauvegarde Network
- * Sauver même train/test set (sortir de la fct)
- * Sauver et charger les img numpys dans datas
- * Ajouter layer : droupout...
