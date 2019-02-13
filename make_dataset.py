@@ -18,7 +18,12 @@ os.getcwd()
 
 #----------- VARIABLES---------------------------------------------
 # Folder with all pictures
-dirname = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"
+dirnameBKB = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"
+dirnameCIRMF = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_CIRMF"
+dirnameAUTRES = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_AUTRES"
+
+#dirname = "~/BDD_PHOTOS_MANDRILLUS_FACES/MANDRILLS_BKB"
+#dirname = os.path.expanduser(os.getenv('USERPROFILE'))+'\\BDD_PHOTOS_MANDRILLUS_FACES\\MANDRILLS_BKB'
 
 #Doc excel with pictures annotations
 tags_pict_path = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/Tags_240119.csv"
@@ -27,7 +32,6 @@ inputShape = (224, 224)
 
 
 #----------- FUNCTIONS---------------------------------------------
-
 
 def list_of_pict(dirName):
     """Get the list of all files in directory tree at given path"""
@@ -78,7 +82,7 @@ def clean_pict(x):
 
 
 
-def load_images(dirname,tags_pict, savefile):
+def load_images(tags_pict, savefile):
     """Load each image into list of numpy array and transform into array
     ----------
     dirname : path to folder with pictures
@@ -91,7 +95,9 @@ def load_images(dirname,tags_pict, savefile):
         # (inputShape[0], inputShape[1], 3) however we need to expand the
         # dimension by making the shape (1, inputShape[0], inputShape[1], 3)
         # so we can pass it through thenetwork
-        img_path = dirname + '/' + tags_pict.Folder[p] + '/' + tags_pict.pict[p]
+        dirname = "C:/Users/renoult/Documents/BDD_PHOTOS_MANDRILLUS_FACES/"
+        img_path = tags_pict.folder[p] + '/' + tags_pict.Folder[p] + '/' + tags_pict.pict[p]
+        print(img_path)
         img = load_img(img_path, target_size= inputShape)
         x = img_to_array(img)
         x = np.expand_dims(img, axis=0)
@@ -140,9 +146,19 @@ def train_test_set_all( tags_pict, img_data,  tablename ):
 #----------- ANNOTATIONS---------------------------------------------
 
 #lIST OF PICT
-list_julien = list_of_pict("C:/Users/renoult/Documents/Mandrill Picture Analyses/learn_all_mini12")
-list_pict_BKB = list_of_pict(dirname)
-dict_ind_BKB = dict_of_ind(dirname)
+#list_julien = list_of_pict("C:/Users/renoult/Documents/Mandrill Picture Analyses/learn_all_mini12")
+list_pict_BKB = list_of_pict(dirnameBKB)
+list_pict_CIRMF = list_of_pict(dirnameCIRMF)
+list_pict_AUTRES = list_of_pict(dirnameAUTRES)
+
+#Dataframe
+df1 = pd.DataFrame({'pict':list_pict_BKB , 'folder': [dirnameBKB] * len(list_pict_BKB) })
+df2 = pd.DataFrame({'pict':list_pict_CIRMF , 'folder': [dirnameCIRMF] * len(list_pict_CIRMF) })
+df3 = pd.DataFrame({'pict':list_pict_AUTRES , 'folder': [dirnameAUTRES] * len(list_pict_AUTRES) })
+df_all = pd.concat([df1, df2, df3], keys=['pict', 'pfolder'])
+df_all = pd.concat([df1, df2, df3])
+#df_all.to_csv('datas/train_test_feminity/df_all.csv')
+
 
 #RE-FORMAT AND ANNOTATION CSV
 tags_pict = pd.read_csv(tags_pict_path , sep = ';')
@@ -150,18 +166,54 @@ tags_pict.rename(columns={"Nom du fichier": "pict" , "Tag2" : "qual"} , inplace=
 #tags_pict['qual'] = tags_pict['qual'].astype('category')
 tags_pict['indiv'] = [i.split('_')[0] for i in list(tags_pict['Folder']) ]
 tags_pict['indiv'] = tags_pict['indiv'].astype('category')
-#tags_pict['sex'] = [i.split('_')[1] for i in list(tags_pict['Folder'])]
 tags_pict['sex'] =[ match.group(1)  if match else "unknown" for match in [re.search(".*(fem|mal|unknown).*", l) for l in list(tags_pict['Folder']) ]]
 tags_pict['sex'] = tags_pict['sex'].astype('category')
-
-#tags_pict['stage'] = [i.split('_')[2] for i in list(tags_pict['Folder']) ]
 tags_pict['stage'] =[ match.group(1)  if match else "unknown" for match in [re.search(".*(adu|ado|juv|inf|sub).*", l) for l in list(tags_pict['Folder']) ]]
 tags_pict['stage'] = tags_pict['stage'].astype('category')
 
 
 #Check if images are in dataset
-tags_pict = tags_pict[tags_pict.pict.isin(list_pict_BKB)]
 
+tags_pict = pd.merge(tags_pict, df_all, on='pict')
+
+#Remove unknown
+tags_pict = tags_pict.drop(tags_pict[tags_pict.sex == 'unknown'].index) #11851
+
+#Remove low qual img
+tags_pict = clean_pict(1) #11284
+
+#Remove pict of females with beauty score
+toremove65fem = list(pd.read_csv('datas/train_test_feminity/attract_vars.csv' , sep = ',').pict) #4183
+tags_pict_train = tags_pict[-tags_pict.pict.isin(toremove65fem)]
+tags_pict_test = tags_pict[tags_pict.pict.isin(toremove65fem)]
+tags_pict_train.sex = tags_pict_train.sex.cat.remove_unused_categories() #7101
+tags_pict_test.sex = tags_pict_test.sex.cat.remove_unused_categories() #4183
+
+label_train = np_utils.to_categorical(np.asarray(list(tags_pict_train.sex.cat.codes), dtype ='int64' ), len(tags_pict_train.sex.cat.categories))
+label_test = np_utils.to_categorical(np.asarray(list(tags_pict_test.sex.cat.codes), dtype ='int64' ), len(tags_pict_train.sex.cat.categories))
+
+tags_pict_test.to_csv('datas/train_test_feminity/clean01_feminity_test.csv')
+tags_pict_train.to_csv('datas/train_test_feminity/clean01_feminity_train.csv')
+
+data_train = load_images(tags_pict_train, 'datas/imgload_01_feminity_train')
+data_test = load_images(tags_pict_test, 'datas/imgload_01_feminity_test')
+
+np.savez('datas/train_test_feminity/sex-feminity-clean01' , X_train=data_train , X_test=data_test, y_train=label_train, y_test=label_test )
+
+
+#---Sparseness--------
+#---label
+tags_pict_train = pd.read_csv('datas/train_test_feminity/clean01_feminity_train.csv' , sep = ',')
+tags_pict_test = pd.read_csv('datas/train_test_feminity/clean01_feminity_test.csv' , sep = ',')
+tags_pict_train['indiv'] = tags_pict_train['indiv'].astype('category')
+tags_pict_test['indiv'] = tags_pict_test['indiv'].astype('category')
+
+label_train = np_utils.to_categorical(np.asarray(list(tags_pict_train.indiv.cat.codes), dtype ='int64' ), len(tags_pict_train.indiv.cat.categories))
+#label_test = np_utils.to_categorical(np.asarray(list(tags_pict_test.ind.cat.codes), dtype ='int64' ), len(tags_pict_train.indiv.cat.categories))
+train_test_fem_load = np.load('datas/train_test_feminity/sex-feminity-clean01.npz')
+np.savez('datas/train_test_sparseness/indiv-sparseness-clean01-train' , X_train=data_train ,  y_train=label_train )
+
+#-------------OBSOLETE-------------------------------------------------------
 #DATASET WITHOUT CLEANING
 #shape : 8849 * 8
 #DATASET WITHOUT noeval - 0 : (8781, 8)
@@ -180,13 +232,17 @@ tags_pict = tags_pict[tags_pict.pict.isin(list_pict_BKB)]
 #load_images(dirname,clean_pict(1), 'datas/img_data_load_01')
 
 
-tags_pict  = clean_pict(1)
-load_pict = np.load("datas/img_data_load_01.npy")
-train_test_set_all( tags_pict , load_pict, "clean01_v1" )
-train_test_set = np.load('datas/train-test_set/sex-clean01_v1.npz')
+#tags_pict  = clean_pict(1)
+#load_pict = np.load("datas/img_data_load_01.npy")
+#train_test_set_all( tags_pict , load_pict, "clean01_v1" )
+#train_test_set = np.load('datas/train-test_set/sex-clean01_v1.npz')
 
-tags_pict = clean_pict(2)
-mini_jdd = tags_pict.sample(frac=0.1, replace=False, random_state=1)
-mini_jdd.to_csv('datas/minitest_pict_tags_012.csv')
-img_data_mini = load_images(dirname,mini_jdd, 'datas/img_data_load_012_minitest')
-train_test_set_all( mini_jdd , img_data_mini, "mini_clean012_v1" )
+#tags_pict.to_csv('datas/clean01_feminity.csv')
+#load_pict = np.load("datas/imgload_01_feminity.npy")
+
+
+#tags_pict = clean_pict(2)
+#mini_jdd = tags_pict.sample(frac=0.1, replace=False, random_state=1)
+#mini_jdd.to_csv('datas/minitest_pict_tags_012.csv')
+#img_data_mini = load_images(dirname,mini_jdd, 'datas/img_data_load_012_minitest')
+#train_test_set_all( mini_jdd , img_data_mini, "mini_clean012_v1" )
